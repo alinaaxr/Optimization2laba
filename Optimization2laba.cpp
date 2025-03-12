@@ -1,146 +1,108 @@
 ﻿#include <iostream>
-#include <Windows.h>
 #include <cmath>
-using namespace std;
+#include <vector>
+#include <limits> 
 
-double epsilon1 = 0.01;  //точности решений
-double epsilon2 = 0.01;
-double fi = 10;  //значение штрафной функции в текущей точке
-double r = 10;  //штрафной коэффициент
-double C = 12;  //число для уменьшения параметра штрафа
-int k = 0;  //номер итерации
+int n = 2; //размерность вектора x
+double eps1 = 0.01; //точность решения задачи
+double eps2 = 0.01;//точность решения задачи безусловной минимизации
+double r = 100.0; // начальное значение параметра штрафа
+double C = 10.0; // число для уменьшения параметра штрафа
+double alpha = 0.01; //шаг
+int max_iter = 1000; //максимальное кол-во итераций
 
-struct Point
-{
-    double x1;
-    double x2;
-    double x3;
-};
-
-double function(Point x) {  //исходная функция
-    return x.x1 * x.x2 * x.x3;
+// Целевая функция
+double f(const std::vector<double>& x) {
+    double x1 = x[0];
+    double x2 = x[1];
+    return pow(x1 - 2, 2) + pow(x2 - 3, 2);
 }
 
-double H(Point x) {  //равенство
-    return x.x1 * x.x1 + x.x2 * x.x2 + x.x3 * x.x3 - 1;
+double g(const std::vector<double>& x, int i) {  //ограничения-неравенства
+    if (i == 0) return x[0] + x[1] - 9;
+    if (i == 1) return x[0] + 2 * x[1] - 12;
+    return 0;
 }
 
-double G(Point x) { //неравенство
-    return x.x1 + x.x2 + x.x3;
-}
-
-double F(Point x, double r) {  //штрафная функция с проверкой
-    double hPart = H(x) * H(x) / (2 * r);
-
-    double gPart;
-    if (abs(G(x)) < epsilon1) {
-        gPart = 0; // Если G(x) близко к нулю, штраф не добавляем
+double phi(const std::vector<double>& x, double r) {
+    double penalty = 0.0;
+    for (int i = 0; i < 2; ++i) {
+        if (g(x, i) >= 0) {
+            return std::numeric_limits<double>::infinity();
+        }
+        penalty += log(-g(x, i));  //штрафная функция
     }
-    else if (G(x) > 0) {
-        gPart = r / G(x); // Используем r/G(x) для положительных G(x)
+    return f(x) - r * penalty;
+}
+
+std::vector<double> gradient_phi(const std::vector<double>& x, double r, double h = 1e-5) {   //градиент штрафной функции через конечные разности
+    int n = x.size();
+    std::vector<double> grad(n, 0.0);
+    for (size_t i = 0; i < n; ++i) {
+        std::vector<double> x_plus_h = x;
+        x_plus_h[i] += h;
+        std::vector<double> x_minus_h = x;
+        x_minus_h[i] -= h;
+
+        double phi_plus = phi(x_plus_h, r);
+        double phi_minus = phi(x_minus_h, r);
+
+        if (std::isnan(phi_plus) || std::isinf(phi_plus) || std::isnan(phi_minus) || std::isinf(phi_minus)) {
+            return std::vector<double>(n, 0.0);
+        }
+
+        grad[i] = (phi_plus - phi_minus) / (2 * h);
     }
-    else {
-        gPart = 0; // Для отрицательных G(x) штраф не добавляем
+    return grad;
+}
+
+
+// Метод градиентного спуска
+std::vector<double> gradient_descent(const std::vector<double>& x0, double r, double alpha, int max_iter) {
+    std::vector<double> x = x0;
+    for (int iter = 0; iter < max_iter; ++iter) {
+        auto grad = gradient_phi(x, r);
+
+        bool nan_grad = false;
+        for (double val : grad) {
+            if (std::isnan(val) || std::isinf(val)) {
+                std::cout << "Gradient became NaN or infinite. Stopping descent.\n";
+                nan_grad = true;
+                break;
+            }
+        }
+        if (nan_grad) {
+            break;
+        }
+
+        for (size_t i = 0; i < x.size(); ++i) {
+            x[i] -= alpha * grad[i];
+        }
+        bool constraint_violated = false;
+        for (int i = 0; i < 2; ++i) {
+            if (g(x, i) >= 0) {
+                std::cout << "Constraint " << i << " violated.  Stopping descent.\n";
+                constraint_violated = true;
+                break;
+            }
+        }
+        if (constraint_violated) break;
     }
-
-    return hPart + gPart;
-}
-
-double P(Point x, double r) {  //вспомогательная функция
-    return function(x) + F(x, r);
-}
-
-Point gradientFunction(Point x) {
-    return{ x.x2 * x.x3, x.x1 * x.x3, x.x1 * x.x2 };
-}
-
-Point gradientH(Point x) {
-    return{ 2 * x.x1, 2 * x.x2, 2 * x.x3 };
-}
-
-Point gradientG(Point x) {
-    return{ 1, 1, 1 };
-}
-
-Point Shtrafgradient(Point x, double r) // градиент штрафной функции
-{
-    Point gFi;
-
-    double hGrad = H(x);
-    double gGrad;
-
-    if (abs(G(x)) < epsilon1) {
-        gGrad = 0;
-    }
-    else if (G(x) > 0) {
-        gGrad = -r / (G(x) * G(x)); // Производная r/G(x)
-    }
-    else {
-        gGrad = 0;
-    }
-
-    gFi.x1 = hGrad * gradientH(x).x1 / r + gGrad * gradientG(x).x1;
-    gFi.x2 = hGrad * gradientH(x).x2 / r + gGrad * gradientG(x).x2;
-    gFi.x3 = hGrad * gradientH(x).x3 / r + gGrad * gradientG(x).x3;
-
-    return gFi;
-}
-
-Point gradientP(Point x, double r)
-{
-    Point gf = gradientFunction(x);
-    Point sgf = Shtrafgradient(x, r);
-    return{ gf.x1 + sgf.x1, gf.x2 + sgf.x2, gf.x3 + sgf.x3 };
-}
-
-double Norma(Point x)
-{
-    return sqrt(x.x1 * x.x1 + x.x2 * x.x2 + x.x3 * x.x3);
-}
-
-Point GradientSpusk(Point p0, double r)
-{
-    Point x, gf = gradientP(p0, r);
-    int k_local = 0;
-    double t = 1.0;
-    do
-    {
-        k_local++;
-
-        x.x1 = p0.x1 - t * gf.x1;
-        x.x2 = p0.x2 - t * gf.x2;
-        x.x3 = p0.x3 - t * gf.x3;
-
-        if ((P(x, r) - P(p0, r)) >= 0) t = t / 2;
-        p0 = x;
-        gf = gradientP(p0, r);
-
-    } while (Norma(gf) > epsilon2);
-
     return x;
 }
 
-void IterationProcess(Point& p0, Point& x) {
-    do {
-        k++;
-        x = GradientSpusk(p0, r);
-        fi = F(x, r);
-        r = r / C;
-        p0 = x; // Обновление начальной точки для следующей итерации
-    } while (abs(H(x)) > epsilon1 && abs(max(0.0, G(x))) > epsilon1);
-}
+int main() {
+    setlocale(LC_ALL, "RUS");
 
-int main()
-{
-    setlocale(LC_ALL, "rus");
-    Point p0, x;
+    std::vector<double> x0 = { 0.0, 0.0 }; // начальное приближение
+    std::vector<double> x = x0;
 
-    p0.x1 = -0.5, p0.x2 = -0.5, p0.x3 = -0.5; // Начальное приближение
+    for (int k = 0; k < 10; ++k) {
+        x = gradient_descent(x, r, alpha, max_iter);
+        r /= C;
+        std::cout << "Номер итерациия " << k << ": x = (" << x[0] << ", " << x[1] << ")" << std::endl;
+    }
 
-    IterationProcess(p0, x);
-
-    cout << "Точка условного экстремума =  " << round(x.x1 * 100) / 100 << ", " << round(x.x2 * 100) / 100.0 << ", " << round(x.x3 * 100) / 100.0 << "\n";
-    cout << "Значение функции в точке экстремума = " << function(x) << endl;
-    cout << "Количество итераций K = " << k << endl;
+    std::cout << "Точка экстремума x = (" << x[0] << ", " << x[1] << ")\n";
     return 0;
 }
