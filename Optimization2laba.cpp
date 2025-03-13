@@ -5,8 +5,8 @@
 
 int n = 2; //размерность вектора x
 double eps1 = 0.01; //точность решения задачи
-double eps2 = 0.01;//точность решения задачи безусловной минимизации
-double r = 100.0; // начальное значение параметра штрафа
+double eps2 = 0.01;
+double r = 10.0; // начальное значение параметра штрафа
 double C = 10.0; // число для уменьшения параметра штрафа
 double alpha = 0.01; //шаг
 int max_iter = 1000; //максимальное кол-во итераций
@@ -66,7 +66,7 @@ std::vector<double> gradient_descent(const std::vector<double>& x0, double r, do
         bool nan_grad = false;
         for (double val : grad) {
             if (std::isnan(val) || std::isinf(val)) {
-                std::cout << "Gradient became NaN or infinite. Stopping descent.\n";
+                std::cout << "Нулевой или неопределенный градиент\n";
                 nan_grad = true;
                 break;
             }
@@ -76,12 +76,12 @@ std::vector<double> gradient_descent(const std::vector<double>& x0, double r, do
         }
 
         for (size_t i = 0; i < x.size(); ++i) {
-            x[i] -= alpha * grad[i];
+            x[i] -= alpha * grad[i];    //уменьшение x
         }
         bool constraint_violated = false;
         for (int i = 0; i < 2; ++i) {
             if (g(x, i) >= 0) {
-                std::cout << "Constraint " << i << " violated.  Stopping descent.\n";
+                std::cout << "Ошиюка " << i << "Остановка спуска\n";
                 constraint_violated = true;
                 break;
             }
